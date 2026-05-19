@@ -1,8 +1,8 @@
 # GoalSync AI - Hackathon Submission
 
 ## 1. Live Demo URLs
-* **Frontend Portal:** [Insert Vercel URL here]
-* **Backend API:** [Insert Render URL here]
+* **Frontend Portal:** https://goal-sync-eta.vercel.app
+* **Backend API:** https://goalsync-ql02.onrender.com
 
 ## 2. Source Code Repository
 **GitHub:** https://github.com/deepak-m-v/GoalSync.git
