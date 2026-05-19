@@ -8,7 +8,7 @@
 **GitHub:** https://github.com/deepak-m-v/GoalSync.git
 
 ## 3. Architecture Diagram
-Please see the attached `ARCHITECTURE.pdf` (generated from the provided Mermaid diagram).
+Please see the `ARCHITECTURE.md` file included in this repository.
 
 ## 4. Role-Based Login Credentials
 The platform supports three distinct enterprise roles. You can seamlessly switch between these user journeys by logging out and logging back in using the credentials below:
