@@ -1,0 +1,45 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Goal Approval Required",
+      "weight": "Bolder",
+      "size": "Large",
+      "color": "Accent"
+    },
+    {
+      "type": "TextBlock",
+      "text": "Jamie Employee submitted a goal sheet for your review.",
+      "wrap": true
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        { "title": "Employee", "value": "Jamie Employee" },
+        { "title": "Email", "value": "employee@goalsync.com" },
+        { "title": "Cycle", "value": "FY 2026" },
+        { "title": "Goals", "value": "5" },
+        { "title": "Submitted", "value": "May 17, 2026, 9:00 AM" }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.OpenUrl",
+      "title": "Review in GoalSync",
+      "url": "http://localhost:5173/manager/approvals?approvalId=1",
+      "style": "positive"
+    },
+    {
+      "type": "Action.OpenUrl",
+      "title": "Team dashboard",
+      "url": "http://localhost:5173/dashboard"
+    }
+  ],
+  "msteams": {
+    "width": "Full"
+  }
+}

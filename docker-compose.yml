@@ -1,0 +1,44 @@
+# Local development — hot reload backend, Vite on host (or add frontend service)
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: goalsync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: goalsync
+      POSTGRES_PASSWORD: goalsync_dev
+      POSTGRES_DB: goalsync
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U goalsync']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: goalsync-api
+    restart: unless-stopped
+    ports:
+      - '5000:5000'
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DATABASE_URL: postgresql://goalsync:goalsync_dev@postgres:5432/goalsync
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_REFRESH_SECRET: dev_refresh_secret
+      CORS_ORIGIN: http://localhost:5173
+      APP_URL: http://localhost:5173
+      RUN_PRISMA_PUSH: 'true'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

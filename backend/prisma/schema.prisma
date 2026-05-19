@@ -1,0 +1,427 @@
+// GoalSync AI — Prisma schema (maps to database/schema.sql)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum goal_uom_type {
+  numeric
+  percentage
+  timeline
+  zero_based
+}
+
+enum goal_status {
+  draft
+  submitted
+  approved
+  rejected
+  locked
+}
+
+enum approval_status {
+  pending
+  approved
+  rejected
+}
+
+enum quarter_code {
+  Q1
+  Q2
+  Q3
+  Q4
+}
+
+enum check_in_status {
+  not_started
+  on_track
+  completed
+}
+
+enum escalation_status {
+  open
+  in_progress
+  resolved
+  dismissed
+}
+
+enum escalation_type {
+  goal_not_submitted
+  approval_pending
+  check_in_overdue
+  other
+}
+
+enum escalation_level {
+  employee
+  manager
+  hr
+}
+
+enum email_queue_status {
+  pending
+  sent
+  failed
+}
+
+enum notification_type {
+  goal_approval
+  check_in_reminder
+  escalation
+  system
+  unlock
+}
+
+enum audit_action {
+  create
+  update
+  delete
+  submit
+  approve
+  reject
+  unlock
+  check_in
+}
+
+model Role {
+  id          Int      @id @default(autoincrement()) @db.SmallInt
+  name        String   @unique @db.VarChar(50)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  users       User[]
+
+  @@map("roles")
+}
+
+model Department {
+  id        Int          @id @default(autoincrement())
+  name      String       @unique @db.VarChar(100)
+  code      String?      @unique @db.VarChar(20)
+  parentId  Int?         @map("parent_id")
+  isActive  Boolean      @default(true) @map("is_active")
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  parent    Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  children  Department[] @relation("DeptTree")
+  users     User[]
+
+  @@map("departments")
+}
+
+model PerformanceCycle {
+  id            Int              @id @default(autoincrement())
+  name          String           @db.VarChar(100)
+  year          Int              @db.SmallInt
+  startDate     DateTime         @map("start_date") @db.Date
+  endDate       DateTime         @map("end_date") @db.Date
+  isActive      Boolean          @default(false) @map("is_active")
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  goals         Goal[]
+  sharedGoals   SharedGoal[]
+  goalApprovals GoalApproval[]
+  escalations   Escalation[]
+
+  @@unique([year, name])
+  @@map("performance_cycles")
+}
+
+model User {
+  id              Int                     @id @default(autoincrement())
+  uuid            String                  @unique @default(uuid()) @db.Uuid
+  email           String                  @unique @db.VarChar(255)
+  passwordHash    String                  @map("password_hash") @db.VarChar(255)
+  firstName       String                  @map("first_name") @db.VarChar(100)
+  lastName        String                  @map("last_name") @db.VarChar(100)
+  roleId          Int                     @map("role_id") @db.SmallInt
+  departmentId    Int?                    @map("department_id")
+  managerId       Int?                    @map("manager_id")
+  employeeCode    String?                 @map("employee_code") @db.VarChar(50)
+  isActive        Boolean                 @default(true) @map("is_active")
+  lastLoginAt     DateTime?               @map("last_login_at") @db.Timestamptz
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  role            Role                    @relation(fields: [roleId], references: [id])
+  department      Department?             @relation(fields: [departmentId], references: [id])
+  manager         User?                   @relation("UserHierarchy", fields: [managerId], references: [id])
+  directReports   User[]                  @relation("UserHierarchy")
+  goals           Goal[]
+  sharedGoalsCreated SharedGoal[]         @relation("SharedGoalCreator")
+  assignments     SharedGoalAssignment[]  @relation("AssignmentUser")
+  assignmentsMade SharedGoalAssignment[]  @relation("AssignmentAssigner")
+  goalApprovals   GoalApproval[]          @relation("ApprovalOwner")
+  reviewsGiven    GoalApproval[]          @relation("ApprovalReviewer")
+  checkInsUpdated CheckIn[]
+  achievementLogs AchievementLog[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  escalations     Escalation[]            @relation("EscalationSubject")
+  escalationsTo   Escalation[]            @relation("EscalationTarget")
+  escalationsHr   Escalation[]            @relation("EscalationHr")
+  escalationsResolved Escalation[]        @relation("EscalationResolver")
+  goalsLocked     Goal[]                  @relation("GoalLocker")
+  firebaseUid     String?                 @unique @map("firebase_uid") @db.VarChar(128)
+  azureOid        String?                 @unique @map("azure_oid") @db.VarChar(128)
+  refreshTokens   RefreshToken[]
+  emailQueue      EmailQueue[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    Int      @map("user_id")
+  tokenHash String   @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model SharedGoal {
+  id          Int                    @id @default(autoincrement())
+  cycleId     Int                    @map("cycle_id")
+  title       String                 @db.VarChar(255)
+  description String?
+  thrustArea  String?                @map("thrust_area") @db.VarChar(100)
+  uomType     goal_uom_type          @map("uom_type")
+  target      Decimal?               @db.Decimal(15, 4)
+  createdById Int                    @map("created_by")
+  isActive    Boolean                @default(true) @map("is_active")
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  cycle       PerformanceCycle       @relation(fields: [cycleId], references: [id])
+  createdBy   User                   @relation("SharedGoalCreator", fields: [createdById], references: [id])
+  assignments SharedGoalAssignment[]
+  goals       Goal[]
+
+  @@map("shared_goals")
+}
+
+model Goal {
+  id           Int            @id @default(autoincrement())
+  userId       Int            @map("user_id")
+  cycleId      Int            @map("cycle_id")
+  sharedGoalId Int?           @map("shared_goal_id")
+  title        String         @db.VarChar(255)
+  description  String?
+  thrustArea   String?        @map("thrust_area") @db.VarChar(100)
+  uomType      goal_uom_type  @map("uom_type")
+  target       Decimal?       @db.Decimal(15, 4)
+  weightage    Decimal        @db.Decimal(5, 2)
+  timeline     DateTime?      @db.Date
+  status       goal_status    @default(draft)
+  isShared     Boolean        @default(false) @map("is_shared")
+  isLocked     Boolean        @default(false) @map("is_locked")
+  lockedAt     DateTime?      @map("locked_at") @db.Timestamptz
+  lockedById   Int?           @map("locked_by")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cycle        PerformanceCycle @relation(fields: [cycleId], references: [id])
+  sharedGoal   SharedGoal?    @relation(fields: [sharedGoalId], references: [id])
+  lockedBy     User?          @relation("GoalLocker", fields: [lockedById], references: [id])
+  assignment   SharedGoalAssignment?
+  checkIns     CheckIn[]
+  achievementLogs AchievementLog[]
+
+  @@index([userId, cycleId])
+  @@map("goals")
+}
+
+model SharedGoalAssignment {
+  id           Int        @id @default(autoincrement())
+  sharedGoalId Int        @map("shared_goal_id")
+  userId       Int        @map("user_id")
+  goalId       Int?       @unique @map("goal_id")
+  weightage    Decimal    @db.Decimal(5, 2)
+  assignedById Int        @map("assigned_by")
+  assignedAt   DateTime   @default(now()) @map("assigned_at") @db.Timestamptz
+  sharedGoal   SharedGoal @relation(fields: [sharedGoalId], references: [id], onDelete: Cascade)
+  user         User       @relation("AssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  goal         Goal?      @relation(fields: [goalId], references: [id])
+  assignedBy   User       @relation("AssignmentAssigner", fields: [assignedById], references: [id])
+
+  @@unique([sharedGoalId, userId])
+  @@map("shared_goal_assignments")
+}
+
+model GoalApproval {
+  id         Int              @id @default(autoincrement())
+  userId     Int              @map("user_id")
+  cycleId    Int              @map("cycle_id")
+  status     approval_status  @default(pending)
+  reviewerId Int?             @map("reviewer_id")
+  comments   String?
+  submittedAt DateTime        @default(now()) @map("submitted_at") @db.Timestamptz
+  reviewedAt DateTime?        @map("reviewed_at") @db.Timestamptz
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user       User             @relation("ApprovalOwner", fields: [userId], references: [id], onDelete: Cascade)
+  cycle      PerformanceCycle @relation(fields: [cycleId], references: [id])
+  reviewer   User?            @relation("ApprovalReviewer", fields: [reviewerId], references: [id])
+
+  @@unique([userId, cycleId])
+  @@map("goal_approvals")
+}
+
+model CheckIn {
+  id              Int             @id @default(autoincrement())
+  goalId          Int             @map("goal_id")
+  quarter         quarter_code
+  plannedValue    Decimal?        @map("planned_value") @db.Decimal(15, 4)
+  actualValue     Decimal?        @map("actual_value") @db.Decimal(15, 4)
+  progressStatus  check_in_status @default(not_started) @map("progress_status")
+  completionDate  DateTime?       @map("completion_date") @db.Date
+  progressScore   Decimal?        @map("progress_score") @db.Decimal(5, 2)
+  employeeNotes   String?         @map("employee_notes")
+  managerComments String?         @map("manager_comments")
+  updatedById     Int?            @map("updated_by")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  goal            Goal            @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  updatedBy       User?           @relation(fields: [updatedById], references: [id])
+  achievementLogs AchievementLog[]
+
+  @@unique([goalId, quarter])
+  @@map("check_ins")
+}
+
+model AchievementLog {
+  id            BigInt   @id @default(autoincrement())
+  goalId        Int      @map("goal_id")
+  checkInId     Int?     @map("check_in_id")
+  fieldChanged  String   @default("actual_value") @map("field_changed") @db.VarChar(50)
+  previousValue Decimal? @map("previous_value") @db.Decimal(15, 4)
+  newValue      Decimal? @map("new_value") @db.Decimal(15, 4)
+  changedById   Int?     @map("changed_by")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  goal          Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  checkIn       CheckIn? @relation(fields: [checkInId], references: [id])
+  changedBy     User?    @relation(fields: [changedById], references: [id])
+
+  @@map("achievement_logs")
+}
+
+model AuditLog {
+  id         BigInt       @id @default(autoincrement())
+  userId     Int?         @map("user_id")
+  entityType String       @map("entity_type") @db.VarChar(50)
+  entityId   Int?         @map("entity_id")
+  action     audit_action
+  oldValues  Json?        @map("old_values")
+  newValues  Json?        @map("new_values")
+  metadata   Json?
+  ipAddress  String?      @map("ip_address")
+  userAgent  String?      @map("user_agent")
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  user       User?        @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        BigInt            @id @default(autoincrement())
+  userId    Int               @map("user_id")
+  title     String            @db.VarChar(255)
+  message   String?
+  type      notification_type @default(system)
+  isRead    Boolean           @default(false) @map("is_read")
+  link      String?           @db.VarChar(500)
+  readAt    DateTime?         @map("read_at") @db.Timestamptz
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model EscalationRule {
+  id          Int              @id @default(autoincrement())
+  code        String           @unique @db.VarChar(50)
+  name        String           @db.VarChar(120)
+  description String?
+  isEnabled   Boolean          @default(true) @map("is_enabled")
+  config      Json             @default("{}")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  escalations Escalation[]
+  logs        EscalationLog[]
+
+  @@map("escalation_rules")
+}
+
+model Escalation {
+  id              Int               @id @default(autoincrement())
+  userId          Int               @map("user_id")
+  escalatedToId   Int?              @map("escalated_to")
+  assignedHrId    Int?              @map("assigned_hr_id")
+  cycleId         Int?              @map("cycle_id")
+  ruleId          Int?              @map("rule_id")
+  type            escalation_type
+  level           escalation_level  @default(employee)
+  reason          String?
+  status          escalation_status @default(open)
+  retryCount      Int               @default(0) @map("retry_count")
+  lastNotifiedAt  DateTime?         @map("last_notified_at") @db.Timestamptz
+  nextRetryAt     DateTime?         @map("next_retry_at") @db.Timestamptz
+  resolvedById    Int?              @map("resolved_by")
+  resolvedAt      DateTime?         @map("resolved_at") @db.Timestamptz
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user            User              @relation("EscalationSubject", fields: [userId], references: [id], onDelete: Cascade)
+  escalatedTo     User?             @relation("EscalationTarget", fields: [escalatedToId], references: [id])
+  assignedHr      User?             @relation("EscalationHr", fields: [assignedHrId], references: [id])
+  cycle           PerformanceCycle? @relation(fields: [cycleId], references: [id])
+  resolvedBy      User?             @relation("EscalationResolver", fields: [resolvedById], references: [id])
+  rule            EscalationRule?   @relation(fields: [ruleId], references: [id])
+  logs            EscalationLog[]
+  emailQueue      EmailQueue[]
+
+  @@index([status, type])
+  @@index([userId, cycleId, type])
+  @@map("escalations")
+}
+
+model EscalationLog {
+  id           BigInt            @id @default(autoincrement())
+  escalationId Int               @map("escalation_id")
+  ruleId       Int?              @map("rule_id")
+  action       String            @db.VarChar(50)
+  level        escalation_level?
+  message      String?
+  metadata     Json?
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  escalation   Escalation        @relation(fields: [escalationId], references: [id], onDelete: Cascade)
+  rule         EscalationRule?   @relation(fields: [ruleId], references: [id])
+
+  @@index([escalationId, createdAt(sort: Desc)])
+  @@map("escalation_logs")
+}
+
+model EmailQueue {
+  id           BigInt             @id @default(autoincrement())
+  escalationId Int?               @map("escalation_id")
+  userId       Int                @map("user_id")
+  toEmail      String             @map("to_email") @db.VarChar(255)
+  subject      String             @db.VarChar(255)
+  body         String
+  status       email_queue_status @default(pending)
+  attempts     Int                @default(0)
+  maxAttempts  Int                @default(3) @map("max_attempts")
+  lastError    String?            @map("last_error")
+  scheduledAt  DateTime           @default(now()) @map("scheduled_at") @db.Timestamptz
+  sentAt       DateTime?          @map("sent_at") @db.Timestamptz
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  escalation   Escalation?        @relation(fields: [escalationId], references: [id], onDelete: SetNull)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledAt])
+  @@map("email_queue")
+}
